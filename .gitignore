@@ -9,6 +9,9 @@ cmake-build-*/
 *.user
 CMakeSettings.json
 
+# Prepared release payload
+release/
+
 # Local artefacts
 *.obj
 *.exe
