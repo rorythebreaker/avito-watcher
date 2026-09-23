@@ -39,8 +39,9 @@ independent and each has a test button in the settings.
 
 Download `AvitoWatcher.exe` from the
 [latest release](https://github.com/rorythebreaker/avito-watcher/releases/latest)
-and run it. There is nothing to install: it is a single 750 KB executable with
-no runtime, no frameworks and no DLLs beyond what Windows already has.
+and run it. There is nothing to install: it is a single executable of about
+764 KB with no runtime, no frameworks and no DLLs beyond what Windows already
+has.
 
 Settings and data live in `%APPDATA%\AvitoWatcher`.
 
