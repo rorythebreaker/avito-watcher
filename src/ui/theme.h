@@ -1,0 +1,61 @@
+// Colours, fonts and small drawing helpers for the dark interface.
+//
+// Everything is painted by hand with GDI, so the look does not depend on the
+// system theme and stays the same on every Windows build.
+#pragma once
+
+#include <windows.h>
+
+#include <string>
+
+namespace ui {
+
+namespace color {
+constexpr COLORREF kWindow      = RGB(0x13, 0x17, 0x20);
+constexpr COLORREF kPanel       = RGB(0x17, 0x1b, 0x21);
+constexpr COLORREF kBar         = RGB(0x1b, 0x20, 0x28);
+constexpr COLORREF kCard        = RGB(0x1e, 0x22, 0x28);
+constexpr COLORREF kCardHover   = RGB(0x25, 0x2b, 0x33);
+constexpr COLORREF kCardActive  = RGB(0x24, 0x30, 0x40);
+constexpr COLORREF kBorder      = RGB(0x2e, 0x34, 0x3d);
+constexpr COLORREF kAccent      = RGB(0x00, 0xaa, 0xff);
+constexpr COLORREF kAccentDark  = RGB(0x00, 0x77, 0xcc);
+constexpr COLORREF kText        = RGB(0xe8, 0xec, 0xf1);
+constexpr COLORREF kTextMuted   = RGB(0x8a, 0x93, 0xa0);
+constexpr COLORREF kTextDim     = RGB(0x6f, 0x78, 0x85);
+constexpr COLORREF kPrice       = RGB(0x4a, 0xde, 0x80);
+constexpr COLORREF kWarning     = RGB(0xff, 0xb5, 0x45);
+constexpr COLORREF kError       = RGB(0xff, 0x6b, 0x5c);
+constexpr COLORREF kInput       = RGB(0x12, 0x16, 0x1c);
+constexpr COLORREF kButton      = RGB(0x26, 0x2d, 0x37);
+constexpr COLORREF kButtonHover = RGB(0x2f, 0x38, 0x44);
+}  // namespace color
+
+// Fonts are created once and shared; never delete the returned handles.
+HFONT font(int point_size, bool bold = false);
+HFONT font_ui();        // 9 pt regular
+HFONT font_ui_bold();   // 9 pt bold
+HFONT font_small();     // 8 pt regular
+HFONT font_title();     // 10 pt bold
+
+// Solid brushes kept alive for the whole run.
+HBRUSH brush(COLORREF color);
+
+void fill_rect(HDC dc, const RECT& rect, COLORREF fill);
+void fill_round_rect(HDC dc, const RECT& rect, int radius, COLORREF fill, COLORREF border);
+void draw_pill(HDC dc, const RECT& rect, const std::wstring& text, COLORREF back,
+               COLORREF fore);
+
+// Draws text clipped to the rectangle. `format` takes DT_* flags.
+void draw_text(HDC dc, const RECT& rect, const std::wstring& text, COLORREF text_color,
+               HFONT text_font, UINT format);
+
+// Shortens the text with an ellipsis so it fits the given width.
+std::wstring elide(HDC dc, const std::wstring& text, int width, HFONT text_font);
+
+int text_width(HDC dc, const std::wstring& text, HFONT text_font);
+
+// Scales a value from 96 DPI to the DPI of the given window.
+int dpi_scale(HWND window, int value);
+
+}  // namespace ui

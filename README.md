@@ -1,131 +1,185 @@
 # Avito Watcher
 
-Настольное приложение для Windows, которое следит за появлением новых
-объявлений на Авито и сразу сообщает о них — в самом приложении, в
-Telegram и на почту.
+A desktop app for Windows that watches [Avito](https://www.avito.ru) for new
+listings and tells you the moment one shows up — in the app itself, in Telegram
+and by email.
 
-## Что умеет
+The interface is in Russian, because Avito is a Russian classifieds site and
+that is who this is for.
 
-**Слежение по запросу.** Задаёте поисковый запрос, город и вилку цен — или
-просто вставляете ссылку из адресной строки Авито, настроив фильтры прямо на
-сайте. Приложение регулярно перечитывает первую страницу выдачи,
-отсортированную по дате, и замечает всё, чего там раньше не было.
+> **Note on ethics and terms.** This is a personal tool that polls public search
+> pages at a human pace, no faster than once a minute per task, one request at a
+> time. Do not turn it into a scraper: Avito's terms forbid bulk collection, and
+> hammering the site will get your address blocked.
 
-**Слежение за похожими объявлениями.** Даёте ссылку на понравившееся
-объявление — приложение разбирает его (заголовок, цена, категория, город)
-и строит из этого поисковый запрос. Запрос подбирается по ширине: полный
-заголовок обычно находит ровно одно объявление — то самое, с которого всё
-началось, поэтому при заведении задачи приложение укорачивает запрос, пока
-в выдаче не появятся соседи. Дальше каждое найденное объявление получает
-оценку похожести от 0 до 100%; в уведомления попадает только то, что
-перешагнуло заданный вами порог и уложилось в разброс цены.
+![Built for Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)
+![Written in C++20](https://img.shields.io/badge/C%2B%2B-20-00599c)
+![No dependencies](https://img.shields.io/badge/dependencies-none-4ade80)
 
-**Уведомления.** Всплывающее окно Windows и лента внутри приложения,
-сообщение в Telegram (с фотографией, ценой и ссылкой) и письмо на почту.
-Каналы включаются независимо, каждый можно проверить кнопкой в настройках.
+## What it does
 
-## Установка
+**Watch a search.** Give it a query, a city and a price range — or set the
+filters up on Avito itself and paste the address bar into the app, which gets
+you every filter the site offers. The first page of results, sorted by date, is
+re-read on a schedule and anything that was not there before is reported.
 
-Готовый `AvitoWatcher.exe` ничего не требует — ни Python, ни установки.
-Скопируйте его куда удобно и запустите. Настройки и база найденного лежат в
-`%APPDATA%\AvitoWatcher`.
+**Watch for listings similar to one you like.** Paste a link to a listing. The
+app reads its title, price, category and city, and turns that into a search.
+The query width is tuned once, when the task is created: a full title as a
+query usually matches exactly one listing — the very one you started from — so
+the app shortens it until neighbours appear. Every result is then scored from 0
+to 100 on how much of the sample's wording it repeats, and only what clears your
+threshold and fits the price band is reported.
 
-## С чего начать
+**Tell you about it.** A Windows notification and a feed inside the app, a
+Telegram message with the photo, price and link, and an email. Each channel is
+independent and each has a test button in the settings.
 
-1. Нажмите **Новая задача** и выберите, за чем следить.
-2. Для слежения по запросу введите запрос и город либо вставьте готовую
-   ссылку с Авито. Для похожих — вставьте ссылку на объявление-образец и
-   нажмите **Проверить**: приложение покажет, что именно оно разобрало.
-3. Выберите, как часто проверять. Раз в 5 минут — разумная величина.
-4. Нажмите **Начать слежение**.
+## Install
 
-Первая проверка проходит молча: приложение запоминает то, что висит на
-Авито сейчас, и дальше сообщает только о новом. Для задачи «похожие»
-первая проверка может занять чуть дольше — приложение подбирает
-поисковый запрос.
+Download `AvitoWatcher.exe` from the
+[latest release](https://github.com/rorythebreaker/avito-watcher/releases/latest)
+and run it. There is nothing to install: it is a single 750 KB executable with
+no runtime, no frameworks and no DLLs beyond what Windows already has.
 
-Если хотите увидеть уведомления сразу обо всей текущей выдаче, включите
-в задаче «Уведомить обо всех объявлениях уже при первой проверке».
+Settings and data live in `%APPDATA%\AvitoWatcher`.
 
-## Уведомления в Telegram
+## Getting started
 
-1. Напишите в Telegram боту **@BotFather**, отправьте `/newbot` и следуйте
-   подсказкам. В ответ он пришлёт токен.
-2. Вставьте токен в **Настройки → Telegram**.
-3. Откройте своего нового бота в Telegram и нажмите **Старт** — без этого
-   бот не имеет права вам писать.
-4. Нажмите **Определить chat_id**, затем **Отправить пробное сообщение**.
+1. Press **Новая задача** (New task) and pick what to watch.
+2. For a search, type the query and pick the city, or paste a ready Avito link.
+   For similar listings, paste a link to the sample and press **Проверить**
+   (Check) — the app shows you exactly what it read from it.
+3. Choose how often to check. Once every 5 minutes is a sensible default.
+4. Press **Начать слежение** (Start watching).
 
-## Уведомления на почту
+The first check is silent: the app memorises what is on Avito right now and only
+reports what appears afterwards. A per-task checkbox turns that off if you want
+to be told about the current page too.
 
-В **Настройки → Почта** укажите свой адрес — сервер и порт подставятся сами
-для Gmail, Яндекса, Mail.ru, Outlook и Рамблера.
+## Telegram notifications
 
-Обычный пароль от почты не подойдёт: почтовые службы требуют отдельный
-**пароль приложения**. Его создают в настройках безопасности почтового
-ящика. Проверить настройку можно кнопкой **Отправить пробное письмо**.
+1. Message **@BotFather** in Telegram, send `/newbot` and follow the prompts.
+   It hands you a token.
+2. Paste the token into **Настройки → Telegram**.
+3. Open your new bot in Telegram and press **Start** — without this a bot is not
+   allowed to message you.
+4. Press **Определить chat_id** (Detect chat id), then send a test message.
 
-Токен бота и пароль почты хранятся в `settings.json` зашифрованными
-средствами Windows (DPAPI) — прочитать их может только ваша учётная запись
-на этом компьютере.
+## Email notifications
 
-## Как приложение обходится с Авито
+In **Настройки → Почта** enter your address; the server and port fill
+themselves in for Gmail, Yandex, Mail.ru, Outlook and Rambler.
 
-Авито ограничивает частые обращения, поэтому приложение ведёт себя сдержанно:
+Your normal mailbox password will not work — mail providers require a separate
+**app password**, created in your mailbox security settings.
 
-- запросы идут строго по очереди, с паузой в несколько секунд между ними;
-- проверять чаще раза в минуту нельзя;
-- берётся только первая страница выдачи, отсортированная по дате.
+The bot token and the mail password are encrypted in `settings.json` with
+Windows DPAPI, so they can only be read by your account on this machine.
 
-Сначала делается обычный HTTP-запрос с TLS-отпечатком настоящего Chrome.
-Если Авито отвечает заглушкой «Доступ ограничен», приложение один раз
-повторяет запрос через установленный в системе браузер (Edge или Chrome),
-запуская его в фоновом режиме. Chromium внутрь exe не вкладывается, поэтому
-файл остаётся небольшим — но запасной режим работает только если браузер в
-системе есть. В Windows 11 Edge есть всегда.
+## How it treats Avito
 
-Если блокировка не проходит, помогает увеличить интервал проверки, сделать
-перерыв или указать прокси в **Настройки → Сеть**.
+Avito throttles frequent requests, so the app is deliberately restrained:
 
-## Сборка из исходников
+- requests go strictly one at a time, with a randomised pause of a few seconds;
+- a task is never polled more often than once a minute;
+- only the first page of results is read, sorted by date.
 
-Нужен Python 3.11 или новее.
+A plain HTTPS request is tried first. When Avito answers with its "Доступ
+ограничен" stub, the app loads the same page once through the browser already
+installed on the machine — Edge ships with Windows 11 — started headless and
+driven over the Chrome DevTools protocol. No Chromium is bundled, which is why
+the executable stays small, but the fallback needs a Chromium browser to exist.
+
+If blocks persist, raise the check interval, take a break, or set a proxy in
+**Настройки → Сеть**.
+
+## Building
+
+Requires Visual Studio 2022 Build Tools (the "Desktop development with C++"
+workload) and CMake 3.20 or newer. Nothing else — there are no third-party
+libraries to fetch.
 
 ```powershell
-py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe tools\build.py
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
 ```
 
-Готовый файл появится в `dist\AvitoWatcher.exe`.
+The result is `build\bin\AvitoWatcher.exe`.
 
-Запуск без сборки:
+Running `AvitoWatcher.exe --tray` starts it minimised to the tray; that is also
+what gets written to the Windows Run key when you enable autostart.
+
+### Self-test
 
 ```powershell
-.\.venv\Scripts\python.exe main.py
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
+cmake --build build
+build\bin\AvitoWatcherSelfTest.exe              # offline checks
+build\bin\AvitoWatcherSelfTest.exe <dir>        # also parse saved Avito pages
+build\bin\AvitoWatcherSelfTest.exe <dir> --live # also hit Avito for real
 ```
 
-Ключ `--tray` запускает приложение сразу свёрнутым — он же прописывается в
-автозапуск Windows, если включить соответствующую настройку.
+Saved pages are not kept in the repository. Point the test at a directory with
+`real.html`, `http_block.html`, `live_item.html`, `item.html` and `avito.html`
+captured from Avito to run the parsing checks against genuine markup.
 
-## Устройство
+## How it is put together
 
-| Файл | За что отвечает |
+Written in C++20 against the Win32 API directly. Every part that would normally
+be a dependency is a thin module against something Windows already provides:
+WinHTTP for HTTPS, Schannel for the TLS that SMTP needs, DPAPI for secrets, GDI
+and GDI+ for drawing, and a small hand-written WebSocket client for the DevTools
+protocol.
+
+| Path | Responsibility |
 |---|---|
-| `avitowatcher/engine.py` | расписание проверок, отбор новых объявлений |
-| `avitowatcher/fetcher.py` | HTTP-запросы, распознавание блокировки |
-| `avitowatcher/browser.py` | запасная загрузка через системный браузер |
-| `avitowatcher/parser.py` | разбор выдачи и карточки объявления |
-| `avitowatcher/similarity.py` | построение запроса и оценка похожести |
-| `avitowatcher/notify/` | Telegram и почта |
-| `avitowatcher/ui/` | окно, лента, диалоги, значок в трее |
+| `src/util/` | strings, JSON, paths, logging |
+| `src/core/` | settings, secrets, task and feed storage, autostart |
+| `src/net/` | HTTPS, TLS, WebSocket, the browser fallback, page fetching |
+| `src/avito/` | parsing, similarity scoring, the watching loop |
+| `src/notify/` | Telegram and email |
+| `src/ui/` | window, feed, dialogs, tray icon, theme |
 
-## Если что-то пошло не так
+There is no database: tasks, the feed and the set of already-seen listings are
+three plain files in `%APPDATA%`.
 
-Журнал работы пишется в `%APPDATA%\AvitoWatcher\watcher.log`, а последние
-события видны прямо в окне, внизу справа.
+### Parsing
 
-Вёрстка Авито время от времени меняется. Разбор страницы намеренно сделан с
-запасом: каждое поле ищется несколькими способами. Если однажды перестанет
-определяться, скажем, адрес — остальное продолжит работать, а починить
-придётся только один набор селекторов в `parser.py`.
+Avito's result pages are two megabytes of generated markup, and the app needs a
+handful of fields per card, so there is no DOM. The parser scans for the
+`data-marker` attributes Avito puts on its elements and slices out the element
+carrying them. Each field is looked up through several markers in turn, so when
+the layout changes one field stops resolving instead of the whole page.
+
+Two things that page turned out to need special care, both covered by the
+self-test:
+
+- Cards below the fold arrive with no `<img>` tag at all. The photo address is
+  still there, inside the slider's `data-marker` value.
+- A listing page has a strip of suggested listings built from the very same
+  markup, so the price has to be read from the listing's own block or the sample
+  ends up carrying a neighbour's price.
+
+## Troubleshooting
+
+The log is at `%APPDATA%\AvitoWatcher\watcher.log`, and recent events are shown
+in the window, bottom right.
+
+If the app stops finding anything, Avito has most likely changed its markup.
+Run the self-test against a freshly saved page to see which field broke; the
+fix is usually one selector in `src/avito/parser.cpp`.
+
+## History
+
+This started as a Python application using PySide6 and curl_cffi, and was
+rewritten in C++ to drop the runtime and the 56 MB bundle. The Python version is
+in the git history, up to commit `5c0b5e1`.
+
+Settings carry over between the two — `settings.json` uses the same keys. Tasks
+do not: the Python version kept them in SQLite, the C++ one keeps them in
+`tasks.json`, so watch tasks have to be created again.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

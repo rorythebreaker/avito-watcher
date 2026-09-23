@@ -1,6 +1,17 @@
-.venv/
+# Build output
 build/
-dist/
-__pycache__/
-*.pyc
-assets/icon.ico
+out/
+cmake-build-*/
+
+# Visual Studio / editors
+.vs/
+.vscode/
+*.user
+CMakeSettings.json
+
+# Local artefacts
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.lib
