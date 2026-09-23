@@ -31,6 +31,17 @@ constexpr COLORREF kButton      = RGB(0x26, 0x2d, 0x37);
 constexpr COLORREF kButtonHover = RGB(0x2f, 0x38, 0x44);
 }  // namespace color
 
+// The DPI every layout constant and font is measured against. The window sets
+// it once it knows which monitor it is on, and again on WM_DPICHANGED.
+void set_ui_dpi(unsigned dpi);
+unsigned ui_dpi();
+
+// Converts a length written for a 96 DPI screen into device pixels.
+int scale(int value);
+
+// DPI of the monitor the window is on, 96 when it cannot be determined.
+unsigned window_dpi(HWND window);
+
 // Fonts are created once and shared; never delete the returned handles.
 HFONT font(int point_size, bool bold = false);
 HFONT font_ui();        // 9 pt regular
@@ -57,6 +68,12 @@ int text_width(HDC dc, const std::wstring& text, HFONT text_font);
 
 // Scales a value from 96 DPI to the DPI of the given window.
 int dpi_scale(HWND window, int value);
+
+// Switches the process into dark mode. Until this is done the dark common
+// control themes are ignored and scrollbars, list rows and menus keep their
+// light colours whatever SetWindowTheme is asked for. Must be called before
+// the first window is created.
+void enable_dark_mode_for_app();
 
 // Paints the window's title bar dark. Supported from Windows 10 2004; on older
 // builds the call is simply ignored.

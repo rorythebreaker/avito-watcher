@@ -161,50 +161,51 @@ void TaskDialog::build() {
     item_preview_ = label(L"Объявление ещё не проверено.", left, 154, 570, 48);
     mark_hint(item_preview_);
 
-    similarity_label_ = label(L"Порог похожести:", left, 212, label_width, 20);
-    similarity_slider_ = slider(field_left, 210, 330, 26, kSimilaritySlider, 10, 95,
+    similarity_label_ = label(L"Порог похожести:", left, 216, label_width, 20);
+    // Shifted by the knob radius so the track lines up with the fields below.
+    similarity_slider_ = slider(field_left - 8, 212, 338, 28, kSimilaritySlider, 10, 95,
                                 task_.similarity);
-    similarity_value_ = label(L"", field_left + 340, 212, 60, 20);
+    similarity_value_ = label(L"", field_left + 344, 216, 60, 20);
 
-    tolerance_label_ = label(L"Разброс цены:", left, 244, label_width, 20);
-    tolerance_slider_ = slider(field_left, 242, 330, 26, kToleranceSlider, 0, 100,
+    tolerance_label_ = label(L"Разброс цены:", left, 250, label_width, 20);
+    tolerance_slider_ = slider(field_left - 8, 246, 338, 28, kToleranceSlider, 0, 100,
                                task_.price_tolerance);
-    tolerance_value_ = label(L"", field_left + 340, 244, 60, 20);
+    tolerance_value_ = label(L"", field_left + 344, 250, 60, 20);
 
     similar_note_ = label(
         L"Чем выше порог, тем строже отбор: 30–40% ловит широкий круг похожих товаров, "
         L"60% и выше — почти те же модели.",
-        left, 274, 570, 30);
+        left, 282, 570, 32);
     mark_hint(similar_note_);
 
     // --- common ---
-    label(L"Общее", left, 314, 200, 18);
+    label(L"Общее", left, 332, 200, 18);
 
-    label(L"Название:", left, 344, label_width, 20);
-    name_edit_ = edit(util::widen(task_.name), field_left, 340, field_width, 24, kNameEdit);
+    label(L"Название:", left, 362, label_width, 20);
+    name_edit_ = edit(util::widen(task_.name), field_left, 358, field_width, 24, kNameEdit);
 
-    label(L"Проверять раз в:", left, 376, label_width, 20);
+    label(L"Проверять раз в:", left, 394, label_width, 20);
     std::vector<std::wstring> interval_titles;
     int interval_index = 2;
     for (size_t i = 0; i < std::size(kIntervals); ++i) {
         interval_titles.emplace_back(kIntervals[i].title);
         if (task_.interval == kIntervals[i].seconds) interval_index = static_cast<int>(i);
     }
-    interval_combo_ = combo(field_left, 372, 240, 26, kIntervalCombo, interval_titles,
+    interval_combo_ = combo(field_left, 390, 240, 26, kIntervalCombo, interval_titles,
                             interval_index);
 
-    label(L"Исключать слова:", left, 408, label_width, 20);
-    exclude_edit_ = edit(util::widen(task_.exclude), field_left, 404, field_width, 24,
+    label(L"Исключать слова:", left, 426, label_width, 20);
+    exclude_edit_ = edit(util::widen(task_.exclude), field_left, 422, field_width, 24,
                          kExcludeEdit);
 
     notify_existing_ = check(L"Уведомить обо всех объявлениях уже при первой проверке",
-                             field_left, 434, field_width, 22, kNotifyExisting,
+                             field_left, 454, field_width, 24, kNotifyExisting,
                              task_.notify_existing);
-    enabled_check_ = check(L"Задача включена", field_left, 460, field_width, 22, kEnabledCheck,
+    enabled_check_ = check(L"Задача включена", field_left, 482, field_width, 24, kEnabledCheck,
                            task_.enabled);
 
-    button(L"Сохранить", 380, 500, 110, 30, IDOK, true);
-    button(L"Отмена", 500, 500, 100, 30, IDCANCEL);
+    button(L"Сохранить", 380, 522, 110, 32, IDOK, true);
+    button(L"Отмена", 500, 522, 100, 32, IDCANCEL);
 
     switch_page(task_.kind == core::TaskKind::Similar);
     update_sliders();

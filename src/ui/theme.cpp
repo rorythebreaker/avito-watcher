@@ -16,19 +16,51 @@ std::mutex& cache_mutex() {
     return mutex;
 }
 
+unsigned g_dpi = 96;
+
 }  // namespace
+
+void set_ui_dpi(unsigned dpi) {
+    if (dpi >= 48 && dpi <= 960) g_dpi = dpi;
+}
+
+unsigned ui_dpi() { return g_dpi; }
+
+int scale(int value) {
+    return MulDiv(value, static_cast<int>(g_dpi), 96);
+}
+
+unsigned window_dpi(HWND window) {
+    // GetDpiForWindow exists from Windows 10 1607; older systems have one
+    // DPI for the whole desktop, which the screen DC reports.
+    using GetDpiForWindowFn = UINT(WINAPI*)(HWND);
+    static GetDpiForWindowFn resolver = []() -> GetDpiForWindowFn {
+        HMODULE user32 = GetModuleHandleW(L"user32.dll");
+        return user32 ? reinterpret_cast<GetDpiForWindowFn>(
+                            GetProcAddress(user32, "GetDpiForWindow"))
+                      : nullptr;
+    }();
+    if (window && resolver) {
+        UINT dpi = resolver(window);
+        if (dpi >= 48) return dpi;
+    }
+    HDC screen = GetDC(nullptr);
+    UINT dpi = static_cast<UINT>(GetDeviceCaps(screen, LOGPIXELSX));
+    ReleaseDC(nullptr, screen);
+    return dpi >= 48 ? dpi : 96;
+}
 
 HFONT font(int point_size, bool bold) {
     std::lock_guard<std::mutex> lock(cache_mutex());
-    static std::map<std::pair<int, bool>, HFONT> cache;
+    // Keyed by DPI as well: the same point size is a different pixel height on
+    // a scaled monitor, and a window can move between two of them.
+    static std::map<std::tuple<int, bool, unsigned>, HFONT> cache;
 
-    auto key = std::make_pair(point_size, bold);
+    auto key = std::make_tuple(point_size, bold, g_dpi);
     auto it = cache.find(key);
     if (it != cache.end()) return it->second;
 
-    HDC screen = GetDC(nullptr);
-    int height = -MulDiv(point_size, GetDeviceCaps(screen, LOGPIXELSY), 72);
-    ReleaseDC(nullptr, screen);
+    int height = -MulDiv(point_size, static_cast<int>(g_dpi), 72);
 
     LOGFONTW description = {};
     description.lfHeight = height;
@@ -144,6 +176,26 @@ int dpi_scale(HWND window, int value) {
     return MulDiv(value, static_cast<int>(dpi), 96);
 }
 
+
+void enable_dark_mode_for_app() {
+    // uxtheme exports these by ordinal only. They are undocumented, which is why
+    // everything here is resolved at run time and simply skipped when missing:
+    // the app then looks as it did before, with light scrollbars.
+    enum PreferredAppMode { kDefault = 0, kAllowDark = 1, kForceDark = 2 };
+    using SetPreferredAppModeFn = int(WINAPI*)(int);
+    using FlushMenuThemesFn = void(WINAPI*)();
+
+    HMODULE uxtheme = LoadLibraryExW(L"uxtheme.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!uxtheme) return;
+
+    auto set_mode = reinterpret_cast<SetPreferredAppModeFn>(
+        GetProcAddress(uxtheme, MAKEINTRESOURCEA(135)));
+    auto flush = reinterpret_cast<FlushMenuThemesFn>(
+        GetProcAddress(uxtheme, MAKEINTRESOURCEA(136)));
+
+    if (set_mode) set_mode(kForceDark);
+    if (flush) flush();
+}
 
 void enable_dark_titlebar(HWND window) {
     if (!window) return;

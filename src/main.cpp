@@ -11,6 +11,7 @@
 #include "core/autostart.h"
 #include "core/store.h"
 #include "ui/main_window.h"
+#include "ui/theme.h"
 #include "util/log.h"
 #include "util/paths.h"
 #include "util/strings.h"
@@ -54,6 +55,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
     controls.dwICC = ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES | ICC_TAB_CLASSES |
                      ICC_STANDARD_CLASSES;
     InitCommonControlsEx(&controls);
+
+    // Has to happen before any window exists, or the controls created
+    // first keep their light theme.
+    ui::enable_dark_mode_for_app();
 
     Gdiplus::GdiplusStartupInput gdiplus_input;
     ULONG_PTR gdiplus_token = 0;

@@ -28,6 +28,192 @@ void ensure_class(HINSTANCE instance, WNDPROC proc) {
     g_class_registered = true;
 }
 
+
+// The common trackbar has no dark variant: its track stays white and its thumb
+// keeps the system accent shape, which is glaring next to everything else. This
+// is a minimal replacement - a track, a filled part and a round knob - that
+// reports changes the same way through WM_HSCROLL.
+constexpr const wchar_t* kSliderClass = L"AvitoWatcherSlider";
+
+struct SliderState {
+    int low = 0;
+    int high = 100;
+    int value = 0;
+    bool dragging = false;
+    bool hovered = false;
+};
+
+SliderState* slider_state(HWND window) {
+    return reinterpret_cast<SliderState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+}
+
+int slider_knob_radius() { return scale(8); }
+
+void slider_set_value(HWND window, int value, bool notify) {
+    SliderState* state = slider_state(window);
+    if (!state) return;
+    if (value < state->low) value = state->low;
+    if (value > state->high) value = state->high;
+    if (value == state->value) return;
+    state->value = value;
+    InvalidateRect(window, nullptr, FALSE);
+    if (notify) {
+        SendMessageW(GetParent(window), WM_HSCROLL,
+                     MAKEWPARAM(TB_THUMBTRACK, static_cast<WORD>(value)),
+                     reinterpret_cast<LPARAM>(window));
+    }
+}
+
+int slider_value_at(HWND window, int x) {
+    SliderState* state = slider_state(window);
+    RECT client = {};
+    GetClientRect(window, &client);
+    const int radius = slider_knob_radius();
+    const int left = client.left + radius;
+    const int right = client.right - radius;
+    if (right <= left || !state) return state ? state->low : 0;
+
+    double ratio = static_cast<double>(x - left) / static_cast<double>(right - left);
+    ratio = ratio < 0.0 ? 0.0 : (ratio > 1.0 ? 1.0 : ratio);
+    return state->low + static_cast<int>(ratio * (state->high - state->low) + 0.5);
+}
+
+LRESULT CALLBACK slider_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    SliderState* state = slider_state(window);
+
+    switch (message) {
+        case WM_NCCREATE: {
+            auto* created = new SliderState();
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(created));
+            break;
+        }
+
+        case WM_NCDESTROY:
+            delete state;
+            SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+            break;
+
+        case WM_ERASEBKGND:
+            return 1;
+
+        case WM_PAINT: {
+            PAINTSTRUCT ps = {};
+            HDC screen = BeginPaint(window, &ps);
+            RECT client = {};
+            GetClientRect(window, &client);
+
+            HDC dc = CreateCompatibleDC(screen);
+            HBITMAP buffer = CreateCompatibleBitmap(screen, client.right, client.bottom);
+            HGDIOBJ old_bitmap = SelectObject(dc, buffer);
+
+            fill_rect(dc, client, color::kWindow);
+
+            const int radius = slider_knob_radius();
+            const int middle = (client.top + client.bottom) / 2;
+            const int left = client.left + radius;
+            const int right = client.right - radius;
+            const int span = right - left;
+            const int range = state && state->high > state->low ? state->high - state->low : 1;
+            const int knob_x =
+                state ? left + MulDiv(state->value - state->low, span, range) : left;
+
+            RECT track = {left, middle - scale(2), right, middle + scale(2)};
+            fill_round_rect(dc, track, scale(2), RGB(0x26, 0x2d, 0x37), RGB(0x26, 0x2d, 0x37));
+
+            RECT filled = {left, track.top, knob_x, track.bottom};
+            if (filled.right > filled.left) {
+                fill_round_rect(dc, filled, scale(2), color::kAccent, color::kAccent);
+            }
+
+            RECT knob = {knob_x - radius, middle - radius, knob_x + radius, middle + radius};
+            const bool active = state && (state->dragging || state->hovered);
+            fill_round_rect(dc, knob, radius, active ? color::kAccent : color::kText,
+                            active ? color::kAccent : color::kText);
+
+            BitBlt(screen, 0, 0, client.right, client.bottom, dc, 0, 0, SRCCOPY);
+            SelectObject(dc, old_bitmap);
+            DeleteObject(buffer);
+            DeleteDC(dc);
+            EndPaint(window, &ps);
+            return 0;
+        }
+
+        case WM_LBUTTONDOWN:
+            SetCapture(window);
+            SetFocus(window);
+            if (state) state->dragging = true;
+            slider_set_value(window, slider_value_at(window, GET_X_LPARAM(lparam)), true);
+            return 0;
+
+        case WM_MOUSEMOVE: {
+            if (state && !state->hovered) {
+                state->hovered = true;
+                TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, window, 0};
+                TrackMouseEvent(&track);
+                InvalidateRect(window, nullptr, FALSE);
+            }
+            if (state && state->dragging) {
+                slider_set_value(window, slider_value_at(window, GET_X_LPARAM(lparam)), true);
+            }
+            return 0;
+        }
+
+        case WM_MOUSELEAVE:
+            if (state) {
+                state->hovered = false;
+                InvalidateRect(window, nullptr, FALSE);
+            }
+            return 0;
+
+        case WM_LBUTTONUP:
+            if (state) state->dragging = false;
+            ReleaseCapture();
+            InvalidateRect(window, nullptr, FALSE);
+            return 0;
+
+        case WM_KEYDOWN:
+            if (!state) break;
+            if (wparam == VK_LEFT || wparam == VK_DOWN) {
+                slider_set_value(window, state->value - 1, true);
+                return 0;
+            }
+            if (wparam == VK_RIGHT || wparam == VK_UP) {
+                slider_set_value(window, state->value + 1, true);
+                return 0;
+            }
+            if (wparam == VK_HOME) { slider_set_value(window, state->low, true); return 0; }
+            if (wparam == VK_END) { slider_set_value(window, state->high, true); return 0; }
+            break;
+
+        case WM_GETDLGCODE:
+            return DLGC_WANTARROWS;
+
+        case WM_SETFOCUS:
+        case WM_KILLFOCUS:
+            InvalidateRect(window, nullptr, FALSE);
+            return 0;
+
+        default:
+            break;
+    }
+    return DefWindowProcW(window, message, wparam, lparam);
+}
+
+void ensure_slider_class(HINSTANCE instance) {
+    static bool registered = false;
+    if (registered) return;
+    WNDCLASSEXW description = {};
+    description.cbSize = sizeof(description);
+    description.style = CS_HREDRAW | CS_VREDRAW;
+    description.lpfnWndProc = &slider_proc;
+    description.hInstance = instance;
+    description.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    description.hbrBackground = nullptr;
+    description.lpszClassName = kSliderClass;
+    RegisterClassExW(&description);
+    registered = true;
+}
+
 }  // namespace
 
 bool ModalDialog::run(HWND parent, const std::wstring& title, int width, int height) {
@@ -36,7 +222,7 @@ bool ModalDialog::run(HWND parent, const std::wstring& title, int width, int hei
     if (!instance) instance = GetModuleHandleW(nullptr);
     ensure_class(instance, &ModalDialog::proc);
 
-    RECT desired = {0, 0, width, height};
+    RECT desired = {0, 0, scale(width), scale(height)};
     AdjustWindowRectEx(&desired, WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
     int full_width = desired.right - desired.left;
     int full_height = desired.bottom - desired.top;
@@ -236,7 +422,7 @@ void ModalDialog::draw_item(DRAWITEMSTRUCT* item) {
                                                                  : color::kInput;
         fill_rect(item->hDC, item->rcItem, background);
         RECT text_area = item->rcItem;
-        text_area.left += 8;
+        text_area.left += scale(8);
         draw_text(item->hDC, text_area, text, disabled ? color::kTextDim : color::kText,
                   font_ui(), DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         return;
@@ -249,10 +435,13 @@ void ModalDialog::draw_item(DRAWITEMSTRUCT* item) {
     if (is_toggle) {
         fill_rect(item->hDC, item->rcItem, color::kWindow);
 
-        const int box = 16;
-        RECT mark = {item->rcItem.left, item->rcItem.top + (item->rcItem.bottom -
-                                                           item->rcItem.top - box) / 2,
-                     item->rcItem.left + box, 0};
+        // Inset by the ring width: drawn hard against the left edge, the focus
+        // ring would be clipped by the control and wrap only three sides.
+        const int box = scale(16);
+        const int inset = scale(3);
+        RECT mark = {item->rcItem.left + inset,
+                     item->rcItem.top + (item->rcItem.bottom - item->rcItem.top - box) / 2,
+                     item->rcItem.left + inset + box, 0};
         mark.bottom = mark.top + box;
 
         const bool on = toggles_.at(item->hwndItem);
@@ -265,7 +454,7 @@ void ModalDialog::draw_item(DRAWITEMSTRUCT* item) {
         }
         if (on && is_radio) {
             RECT dot = mark;
-            InflateRect(&dot, -5, -5);
+            InflateRect(&dot, -scale(5), -scale(5));
             fill_round_rect(item->hDC, dot, (dot.bottom - dot.top) / 2, RGB(0x08, 0x12, 0x1c),
                             RGB(0x08, 0x12, 0x1c));
         } else if (on) {
@@ -274,7 +463,7 @@ void ModalDialog::draw_item(DRAWITEMSTRUCT* item) {
         }
 
         RECT text_area = item->rcItem;
-        text_area.left += box + 8;
+        text_area.left += inset + box + scale(8);
         draw_text(item->hDC, text_area, text, disabled ? color::kTextDim : color::kText,
                   font_ui(), DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_WORDBREAK);
 
@@ -282,7 +471,10 @@ void ModalDialog::draw_item(DRAWITEMSTRUCT* item) {
         // border here; outlining the mark alone is enough of a cue.
         if (item->itemState & ODS_FOCUS) {
             RECT ring = mark;
-            InflateRect(&ring, 3, 3);
+            InflateRect(&ring, inset, inset);
+            // Keep it inside the control so every side is drawn.
+            if (ring.top < item->rcItem.top) ring.top = item->rcItem.top;
+            if (ring.bottom > item->rcItem.bottom) ring.bottom = item->rcItem.bottom;
             HPEN pen = CreatePen(PS_SOLID, 1, color::kAccent);
             HGDIOBJ old_pen = SelectObject(item->hDC, pen);
             HGDIOBJ old_brush = SelectObject(item->hDC, GetStockObject(NULL_BRUSH));
@@ -312,7 +504,7 @@ void ModalDialog::draw_item(DRAWITEMSTRUCT* item) {
     // untouched, and whatever the button had underneath shows through as a
     // white notch.
     fill_rect(item->hDC, item->rcItem, color::kWindow);
-    fill_round_rect(item->hDC, item->rcItem, 7, face,
+    fill_round_rect(item->hDC, item->rcItem, scale(7), face,
                     primary ? face : RGB(0x33, 0x3c, 0x48));
     draw_text(item->hDC, item->rcItem, text, fore, font_ui(),
               DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -322,9 +514,12 @@ HWND ModalDialog::add(const wchar_t* class_name, const std::wstring& text, DWORD
                       DWORD ex_style, int x, int y, int w, int h, int id) {
     HINSTANCE instance =
         reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(window_, GWLP_HINSTANCE));
+    // Every control in every dialog is placed through here, so this is the one
+    // spot that has to turn the 96 DPI coordinates of the layout into pixels.
     HWND control = CreateWindowExW(
-        ex_style, class_name, text.c_str(), WS_CHILD | WS_VISIBLE | style, x, y, w, h,
-        window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
+        ex_style, class_name, text.c_str(), WS_CHILD | WS_VISIBLE | style, scale(x), scale(y),
+        scale(w), scale(h), window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+        instance, nullptr);
     if (control) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font_ui()), TRUE);
     return control;
 }
@@ -340,7 +535,8 @@ HWND ModalDialog::edit(const std::wstring& text, int x, int y, int w, int h, int
     if (multiline) style |= ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL;
     HWND control = add(L"Edit", text, style, 0, x, y, w, h, id);
     if (control) {
-        SendMessageW(control, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(7, 7));
+        SendMessageW(control, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
+                     MAKELPARAM(scale(7), scale(7)));
         enable_dark_control(control);
         fields_.push_back(control);
     }
@@ -395,7 +591,7 @@ HWND ModalDialog::combo(int x, int y, int w, int h, int id,
                            WS_VSCROLL,
                        0, x, y, w, h * 8, id);
     if (!control) return nullptr;
-    SendMessageW(control, CB_SETITEMHEIGHT, static_cast<WPARAM>(-1), h - 8);
+    SendMessageW(control, CB_SETITEMHEIGHT, static_cast<WPARAM>(-1), scale(h - 8));
     for (const std::wstring& item : items) {
         SendMessageW(control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(item.c_str()));
     }
@@ -405,11 +601,15 @@ HWND ModalDialog::combo(int x, int y, int w, int h, int id,
 }
 
 HWND ModalDialog::slider(int x, int y, int w, int h, int id, int low, int high, int value) {
-    HWND control = add(TRACKBAR_CLASSW, L"", WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 0, x, y, w, h,
-                       id);
+    ensure_slider_class(
+        reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(window_, GWLP_HINSTANCE)));
+    HWND control = add(kSliderClass, L"", WS_TABSTOP, 0, x, y, w, h, id);
     if (!control) return nullptr;
-    SendMessageW(control, TBM_SETRANGE, TRUE, MAKELPARAM(low, high));
-    SendMessageW(control, TBM_SETPOS, TRUE, value);
+    if (SliderState* state = slider_state(control)) {
+        state->low = low;
+        state->high = high;
+        state->value = value < low ? low : (value > high ? high : value);
+    }
     return control;
 }
 
@@ -467,7 +667,8 @@ void ModalDialog::toggle_clicked(HWND control) {
 }
 
 int ModalDialog::slider_value(HWND control) const {
-    return control ? static_cast<int>(SendMessageW(control, TBM_GETPOS, 0, 0)) : 0;
+    SliderState* state = control ? slider_state(control) : nullptr;
+    return state ? state->value : 0;
 }
 
 void ModalDialog::enable(HWND control, bool value) {

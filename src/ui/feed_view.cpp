@@ -13,6 +13,7 @@ namespace ui {
 namespace {
 
 constexpr const wchar_t* kClassName = L"AvitoWatcherFeed";
+// Written for 96 DPI and scaled at use.
 constexpr int kCardMargin = 6;
 constexpr int kPad = 12;
 constexpr int kMenuOpen = 1;
@@ -96,7 +97,7 @@ LRESULT CALLBACK FeedView::proc(HWND window, UINT message, WPARAM wparam, LPARAM
 }
 
 int FeedView::card_height() const {
-    return kThumbHeight + 24;
+    return (loader_ ? loader_->thumb_height() : scale(96)) + scale(24);
 }
 
 void FeedView::set_limit(size_t limit) {
@@ -252,7 +253,7 @@ void FeedView::render(HDC screen_dc, const RECT& client) {
 
     if (items_.empty()) {
         RECT text_area = client;
-        text_area.top += 40;
+        text_area.top += scale(40);
         draw_text(dc, text_area,
                   L"Пока пусто. Найденные объявления появятся здесь.",
                   color::kTextDim, font_ui(), DT_CENTER | DT_TOP | DT_WORDBREAK);
@@ -267,63 +268,81 @@ void FeedView::render(HDC screen_dc, const RECT& client) {
         const core::Listing& listing = items_[index];
 
         RECT card = {};
-        card.left = client.left + kCardMargin;
-        card.right = client.right - kCardMargin;
-        card.top = index * card_h - scroll_ + 4;
-        card.bottom = card.top + card_h - 8;
+        card.left = client.left + scale(kCardMargin);
+        card.right = client.right - scale(kCardMargin);
+        card.top = index * card_h - scroll_ + scale(4);
+        card.bottom = card.top + card_h - scale(8);
 
         COLORREF background = color::kCard;
         if (index == selected_) background = color::kCardActive;
         else if (index == hovered_) background = color::kCardHover;
-        fill_round_rect(dc, card, 10, background,
+        fill_round_rect(dc, card, scale(10), background,
                         index == selected_ ? color::kAccent : color::kBorder);
 
-        // Photo
-        RECT photo = {card.left + 10, card.top + 10, card.left + 10 + kThumbWidth,
-                      card.top + 10 + kThumbHeight};
+        // Photo. The thumbnail is decoded at device resolution, so it is blitted
+        // one to one rather than stretched.
+        const int thumb_w = loader_ ? loader_->thumb_width() : scale(128);
+        const int thumb_h = loader_ ? loader_->thumb_height() : scale(96);
+        RECT photo = {card.left + scale(10), card.top + scale(10),
+                      card.left + scale(10) + thumb_w, card.top + scale(10) + thumb_h};
+        const int photo_radius = scale(7);
         HBITMAP thumbnail = loader_ ? loader_->get(listing.image_url) : nullptr;
         if (thumbnail) {
+            // Clip to the same rounded shape the placeholder and the card use,
+            // so the picture does not sit as a hard-edged square inside them.
+            HRGN clip = CreateRoundRectRgn(photo.left, photo.top, photo.right + 1,
+                                           photo.bottom + 1, photo_radius * 2,
+                                           photo_radius * 2);
+            SelectClipRgn(dc, clip);
+
             HDC source = CreateCompatibleDC(dc);
             HGDIOBJ old_source = SelectObject(source, thumbnail);
-            BitBlt(dc, photo.left, photo.top, kThumbWidth, kThumbHeight, source, 0, 0, SRCCOPY);
+            BitBlt(dc, photo.left, photo.top, thumb_w, thumb_h, source, 0, 0, SRCCOPY);
             SelectObject(source, old_source);
             DeleteDC(source);
+
+            SelectClipRgn(dc, nullptr);
+            DeleteObject(clip);
         } else {
-            fill_round_rect(dc, photo, 7, RGB(0x2a, 0x2f, 0x36), RGB(0x2a, 0x2f, 0x36));
+            fill_round_rect(dc, photo, photo_radius, RGB(0x2a, 0x2f, 0x36),
+                            RGB(0x2a, 0x2f, 0x36));
             draw_text(dc, photo, listing.image_url.empty() ? L"нет фото" : L"…",
                       color::kTextDim, font_small(), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
 
-        const int left = photo.right + kPad;
-        int badge_right = card.right - kPad;
+        const int left = photo.right + scale(kPad);
+        int badge_right = card.right - scale(kPad);
 
         // Badges: the task name and, for "similar" tasks, the match percentage.
         if (listing.score < 100) {
             std::wstring text = std::to_wstring(listing.score) + L"%";
-            int badge_width = text_width(dc, text, font_small()) + 14;
-            RECT badge = {badge_right - badge_width, card.top + 10, badge_right,
-                          card.top + 28};
+            int badge_width = text_width(dc, text, font_small()) + scale(14);
+            RECT badge = {badge_right - badge_width, card.top + scale(10), badge_right,
+                          card.top + scale(28)};
             draw_pill(dc, badge, text, color::kAccent, RGB(0x0b, 0x16, 0x20));
-            badge_right = badge.left - 6;
+            badge_right = badge.left - scale(6);
         }
         if (!listing.task_name.empty()) {
-            std::wstring text = elide(dc, util::widen(listing.task_name), 150, font_small());
-            int badge_width = text_width(dc, text, font_small()) + 14;
-            RECT badge = {badge_right - badge_width, card.top + 10, badge_right,
-                          card.top + 28};
+            std::wstring text =
+                elide(dc, util::widen(listing.task_name), scale(150), font_small());
+            int badge_width = text_width(dc, text, font_small()) + scale(14);
+            RECT badge = {badge_right - badge_width, card.top + scale(10), badge_right,
+                          card.top + scale(28)};
             draw_pill(dc, badge, text, RGB(0x32, 0x3a, 0x45), color::kTextMuted);
-            badge_right = badge.left - 6;
+            badge_right = badge.left - scale(6);
         }
 
-        const int title_width = std::max(60, badge_right - left - 8);
+        const int title_width = std::max(scale(60), badge_right - left - scale(8));
 
-        RECT title_area = {left, card.top + 9, left + title_width, card.top + 31};
+        RECT title_area = {left, card.top + scale(9), left + title_width,
+                           card.top + scale(31)};
         draw_text(dc, title_area,
                   elide(dc, util::widen(listing.title.empty() ? "Без названия" : listing.title),
                         title_width, font_ui_bold()),
                   color::kText, font_ui_bold(), DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-        RECT price_area = {left, card.top + 34, card.right - kPad, card.top + 60};
+        RECT price_area = {left, card.top + scale(34), card.right - scale(kPad),
+                           card.top + scale(60)};
         draw_text(dc, price_area, util::widen(listing.price_label()), color::kPrice,
                   font_title(), DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
@@ -333,12 +352,14 @@ void FeedView::render(HDC screen_dc, const RECT& client) {
             if (!meta.empty()) meta += " · ";
             meta += part;
         }
-        const int meta_width = card.right - kPad - left;
-        RECT meta_area = {left, card.top + 62, card.right - kPad, card.top + 80};
+        const int meta_width = card.right - scale(kPad) - left;
+        RECT meta_area = {left, card.top + scale(62), card.right - scale(kPad),
+                          card.top + scale(80)};
         draw_text(dc, meta_area, elide(dc, util::widen(meta), meta_width, font_small()),
                   color::kTextMuted, font_small(), DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-        RECT found_area = {left, card.top + 80, card.right - kPad, card.top + 98};
+        RECT found_area = {left, card.top + scale(80), card.right - scale(kPad),
+                           card.top + scale(98)};
         draw_text(dc, found_area, L"найдено " + ago_text(listing.first_seen),
                   color::kTextDim, font_small(), DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
@@ -377,8 +398,8 @@ LRESULT FeedView::handle_message(UINT message, WPARAM wparam, LPARAM lparam) {
             GetScrollInfo(window_, SB_VERT, &info);
             int position = info.nPos;
             switch (LOWORD(wparam)) {
-                case SB_LINEUP: position -= 40; break;
-                case SB_LINEDOWN: position += 40; break;
+                case SB_LINEUP: position -= scale(40); break;
+                case SB_LINEDOWN: position += scale(40); break;
                 case SB_PAGEUP: position -= info.nPage; break;
                 case SB_PAGEDOWN: position += info.nPage; break;
                 case SB_THUMBTRACK:
@@ -391,7 +412,7 @@ LRESULT FeedView::handle_message(UINT message, WPARAM wparam, LPARAM lparam) {
 
         case WM_MOUSEWHEEL: {
             int delta = GET_WHEEL_DELTA_WPARAM(wparam);
-            scroll_to(scroll_ - delta / WHEEL_DELTA * 60);
+            scroll_to(scroll_ - delta / WHEEL_DELTA * scale(60));
             return 0;
         }
 

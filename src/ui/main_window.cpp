@@ -60,6 +60,9 @@ constexpr int kLeftWidth = 440;
 constexpr int kJournalHeight = 150;
 constexpr int kTimerRefresh = 1;
 
+// Column widths as written for a 96 DPI screen.
+constexpr int kColumnWidths[5] = {150, 84, 62, 80, 48};
+
 struct TaskFinishedPayload {
     int task_id = 0;
     core::TaskStatus status = core::TaskStatus::Ok;
@@ -161,9 +164,13 @@ bool MainWindow::create(HINSTANCE instance, bool start_hidden) {
     core::Settings settings = core::settings().get();
 
     window_ = CreateWindowExW(0, kClassName, kWindowTitle, WS_OVERLAPPEDWINDOW,
-                              CW_USEDEFAULT, CW_USEDEFAULT, 1180, 780, nullptr, nullptr,
+                              CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, nullptr, nullptr,
                               instance, this);
     if (!window_) return false;
+
+    // Everything below is written for a 96 DPI screen, so the scale factor has
+    // to be known before any font is made or any control is placed.
+    set_ui_dpi(window_dpi(window_));
 
     // Restore where the window was last time.
     if (!settings.window_placement.empty()) {
@@ -179,6 +186,25 @@ bool MainWindow::create(HINSTANCE instance, bool start_hidden) {
 
     enable_dark_titlebar(window_);
     build_children(instance);
+
+    // Now that the children exist the window can take its real size.
+    RECT wanted = {0, 0, scale(1180), scale(780)};
+    AdjustWindowRect(&wanted, WS_OVERLAPPEDWINDOW, FALSE);
+    int want_width = wanted.right - wanted.left;
+    int want_height = wanted.bottom - wanted.top;
+
+    // On a scaled monitor the default size can be taller than the screen, which
+    // would push the status bar off the bottom edge.
+    MONITORINFO monitor = {};
+    monitor.cbSize = sizeof(monitor);
+    if (GetMonitorInfoW(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &monitor)) {
+        want_width = std::min(want_width, static_cast<int>(monitor.rcWork.right -
+                                                          monitor.rcWork.left));
+        want_height = std::min(want_height, static_cast<int>(monitor.rcWork.bottom -
+                                                            monitor.rcWork.top));
+    }
+    SetWindowPos(window_, nullptr, 0, 0, want_width, want_height,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     layout();
 
     engine_ = std::make_unique<avito::Engine>(this);
@@ -220,22 +246,18 @@ void MainWindow::build_children(HINSTANCE instance) {
     ListView_SetTextColor(task_list_, color::kText);
     SendMessageW(task_list_, WM_SETFONT, reinterpret_cast<WPARAM>(font_ui()), TRUE);
     SetWindowSubclass(task_list_, task_list_subclass, 1, 0);
-    // The dark list themes draw column separators down the whole empty
-    // area, which looks like a broken table when there are few tasks, so
-    // the list keeps the plain theme and gets its colours from the
-    // ListView_Set*Color calls above and the custom-drawn header.
+    // With the process in dark mode this theme gives the list a dark scrollbar
+    // and dark row highlights instead of the light ones.
+    enable_dark_control(task_list_, L"DarkMode_ItemsView");
 
     // Widths add up to the list's inner width so no horizontal scrollbar
     // appears: kLeftWidth minus margins minus the vertical scrollbar.
-    const struct { const wchar_t* title; int width; } columns[] = {
-        {L"Задача", 150}, {L"Тип", 84}, {L"Интервал", 62},
-        {L"Статус", 80}, {L"Найдено", 48},
-    };
+    const wchar_t* titles[5] = {L"Задача", L"Тип", L"Интервал", L"Статус", L"Найдено"};
     for (int i = 0; i < 5; ++i) {
         LVCOLUMNW column = {};
         column.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
-        column.pszText = const_cast<wchar_t*>(columns[i].title);
-        column.cx = columns[i].width;
+        column.pszText = const_cast<wchar_t*>(titles[i]);
+        column.cx = scale(kColumnWidths[i]);
         column.iSubItem = i;
         ListView_InsertColumn(task_list_, i, &column);
     }
@@ -263,53 +285,64 @@ void MainWindow::build_children(HINSTANCE instance) {
                                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdJournal)),
                                instance, nullptr);
     SendMessageW(journal_, WM_SETFONT, reinterpret_cast<WPARAM>(font(8)), TRUE);
-    SendMessageW(journal_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(7, 7));
+    SendMessageW(journal_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
+                 MAKELPARAM(scale(7), scale(7)));
     enable_dark_control(journal_);
 
-    images_ = std::make_unique<ImageLoader>(window_, WM_IMAGE_READY);
+    images_ = std::make_unique<ImageLoader>(window_, WM_IMAGE_READY, scale(128), scale(96));
     feed_ = std::make_unique<FeedView>();
     feed_->create(window_, kIdFeed, images_.get(), instance);
+    enable_dark_control(feed_->handle());
 }
 
 void MainWindow::layout() {
+    // A resize can arrive before the children exist - SetWindowPos during
+    // start-up sends WM_SIZE - and there is nothing to arrange yet.
+    if (!feed_ || !task_list_ || !journal_) return;
+
     RECT client = {};
     GetClientRect(window_, &client);
     const int width = client.right;
     const int height = client.bottom;
 
-    const int content_top = kToolbarHeight + 8;
-    const int content_bottom = height - kStatusHeight - 8;
+    const int margin = scale(8);
+    const int content_top = scale(kToolbarHeight) + margin;
+    const int content_bottom = height - scale(kStatusHeight) - margin;
 
     // Left column: the task list with a hint underneath.
-    const int list_top = content_top + 22;
-    const int hint_height = 54;
-    MoveWindow(task_list_, 8, list_top, kLeftWidth - 16,
-               std::max(60, content_bottom - list_top - hint_height), TRUE);
+    const int left_width = scale(kLeftWidth);
+    const int list_top = content_top + scale(22);
+    const int hint_height = scale(54);
+    MoveWindow(task_list_, margin, list_top, left_width - margin * 2,
+               std::max(scale(60), content_bottom - list_top - hint_height), TRUE);
 
     // Right column.
-    const int right_left = kLeftWidth;
-    const int right_width = std::max(200, width - right_left - 8);
+    const int right_left = left_width;
+    const int right_width = std::max(scale(200), width - right_left - margin);
     const int header_top = content_top;
 
-    MoveWindow(clear_button_, right_left + right_width - 130, header_top - 2, 130, 26, TRUE);
-    MoveWindow(filter_combo_, right_left + right_width - 130 - 230, header_top - 2, 220, 240,
-               TRUE);
+    const int clear_width = scale(130);
+    const int filter_width = scale(220);
+    MoveWindow(clear_button_, right_left + right_width - clear_width, header_top - scale(2),
+               clear_width, scale(26), TRUE);
+    MoveWindow(filter_combo_, right_left + right_width - clear_width - scale(10) - filter_width,
+               header_top - scale(2), filter_width, scale(240), TRUE);
 
-    const int feed_top = header_top + 30;
-    const int journal_top = content_bottom - kJournalHeight;
+    const int feed_top = header_top + scale(30);
+    const int journal_top = content_bottom - scale(kJournalHeight);
     MoveWindow(feed_->handle(), right_left, feed_top, right_width,
-               std::max(80, journal_top - feed_top - 24), TRUE);
-    MoveWindow(journal_, right_left, journal_top, right_width, kJournalHeight, TRUE);
+               std::max(scale(80), journal_top - feed_top - scale(24)), TRUE);
+    MoveWindow(journal_, right_left, journal_top, right_width, scale(kJournalHeight), TRUE);
 
     // Toolbar buttons are painted by the parent; compute their boxes here.
     HDC dc = GetDC(window_);
-    int x = 10;
+    int x = scale(10);
     for (ToolButton& tool : buttons_) {
         int text_size = text_width(dc, tool.text, font_ui());
-        int button_width = text_size + (tool.wide ? 34 : 26);
-        if (tool.id == kBtnSettings) x = width - button_width - 10;
-        tool.rect = {x, 8, x + button_width, 8 + 32};
-        x += button_width + 6;
+        int button_width = text_size + scale(tool.wide ? 34 : 26);
+        if (tool.id == kBtnSettings) x = width - button_width - scale(10);
+        tool.rect = {x, scale(8), x + button_width, scale(8) + scale(32)};
+        x += button_width + scale(6);
     }
     ReleaseDC(window_, dc);
 
@@ -334,10 +367,37 @@ LRESULT MainWindow::handle(UINT message, WPARAM wparam, LPARAM lparam) {
             if (wparam != SIZE_MINIMIZED) layout();
             return 0;
 
+        case WM_DPICHANGED: {
+            // The window moved to a monitor with a different scale: rebuild the
+            // fonts at the new size, take the rectangle Windows suggests and lay
+            // everything out again.
+            set_ui_dpi(HIWORD(wparam));
+            for (HWND child : {task_list_, filter_combo_, clear_button_}) {
+                if (child) SendMessageW(child, WM_SETFONT,
+                                        reinterpret_cast<WPARAM>(font_ui()), TRUE);
+            }
+            if (journal_) {
+                SendMessageW(journal_, WM_SETFONT, reinterpret_cast<WPARAM>(font(8)), TRUE);
+            }
+            for (int i = 0; i < 5; ++i) {
+                ListView_SetColumnWidth(task_list_, i,
+                                        scale(kColumnWidths[i]));
+            }
+            const RECT* suggested = reinterpret_cast<const RECT*>(lparam);
+            if (suggested) {
+                SetWindowPos(window_, nullptr, suggested->left, suggested->top,
+                             suggested->right - suggested->left,
+                             suggested->bottom - suggested->top,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+            layout();
+            return 0;
+        }
+
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
-            info->ptMinTrackSize.x = 900;
-            info->ptMinTrackSize.y = 560;
+            info->ptMinTrackSize.x = scale(900);
+            info->ptMinTrackSize.y = scale(560);
             return 0;
         }
 
@@ -441,7 +501,31 @@ LRESULT MainWindow::handle(UINT message, WPARAM wparam, LPARAM lparam) {
                 auto* draw = reinterpret_cast<NMLVCUSTOMDRAW*>(lparam);
                 switch (draw->nmcd.dwDrawStage) {
                     case CDDS_PREPAINT:
-                        return CDRF_NOTIFYITEMDRAW;
+                        return CDRF_NOTIFYITEMDRAW | CDRF_NOTIFYPOSTPAINT;
+
+                    case CDDS_POSTPAINT: {
+                        // The dark items theme keeps drawing column separators
+                        // below the last row, which reads as a broken table when
+                        // there are only a couple of tasks. Paint over them.
+                        RECT client = {};
+                        GetClientRect(task_list_, &client);
+                        int bottom = 0;
+                        const int count = ListView_GetItemCount(task_list_);
+                        if (count > 0) {
+                            RECT last = {};
+                            ListView_GetItemRect(task_list_, count - 1, &last, LVIR_BOUNDS);
+                            bottom = last.bottom;
+                        } else if (HWND header_control = ListView_GetHeader(task_list_)) {
+                            RECT bar = {};
+                            GetClientRect(header_control, &bar);
+                            bottom = bar.bottom;
+                        }
+                        if (bottom < client.bottom) {
+                            RECT empty = {client.left, bottom, client.right, client.bottom};
+                            fill_rect(draw->nmcd.hdc, empty, color::kInput);
+                        }
+                        return CDRF_DODEFAULT;
+                    }
                     case CDDS_ITEMPREPAINT:
                         draw->clrTextBk = (draw->nmcd.uItemState & CDIS_SELECTED)
                                               ? color::kCardActive
@@ -449,14 +533,18 @@ LRESULT MainWindow::handle(UINT message, WPARAM wparam, LPARAM lparam) {
                         draw->clrText = color::kText;
                         return CDRF_NOTIFYSUBITEMDRAW;
                     case CDDS_ITEMPREPAINT | CDDS_SUBITEM: {
+                        // The background has to be repeated for every subitem:
+                        // what was set at item level does not carry over here.
+                        draw->clrTextBk = (draw->nmcd.uItemState & CDIS_SELECTED)
+                                              ? color::kCardActive
+                                              : color::kInput;
+                        draw->clrText = color::kText;
                         if (draw->iSubItem == 3) {
                             core::Task task;
                             int id = static_cast<int>(draw->nmcd.lItemlParam);
                             if (core::store().task(id, task)) {
                                 draw->clrText = status_color(task.status);
                             }
-                        } else {
-                            draw->clrText = color::kText;
                         }
                         return CDRF_NEWFONT;
                     }
@@ -635,26 +723,29 @@ void MainWindow::paint() {
     paint_toolbar(dc, client);
 
     // Section captions and the task hint.
-    RECT caption = {8, kToolbarHeight + 8, kLeftWidth - 16, kToolbarHeight + 28};
+    RECT caption = {scale(8), scale(kToolbarHeight + 8), scale(kLeftWidth - 16),
+                    scale(kToolbarHeight + 28)};
     draw_text(dc, caption, L"Задачи", color::kTextMuted, font_ui(),
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    RECT feed_caption = {kLeftWidth, kToolbarHeight + 8, kLeftWidth + 300, kToolbarHeight + 28};
+    RECT feed_caption = {scale(kLeftWidth), scale(kToolbarHeight + 8), scale(kLeftWidth + 300),
+                         scale(kToolbarHeight + 28)};
     draw_text(dc, feed_caption, L"Найденные объявления", color::kTextMuted, font_ui(),
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     RECT list_rect = {};
     GetWindowRect(task_list_, &list_rect);
     MapWindowPoints(nullptr, window_, reinterpret_cast<POINT*>(&list_rect), 2);
-    RECT hint = {8, list_rect.bottom + 6, kLeftWidth - 16, list_rect.bottom + 60};
+    RECT hint = {scale(8), list_rect.bottom + scale(6), scale(kLeftWidth - 16),
+                 list_rect.bottom + scale(60)};
     draw_text(dc, hint, task_hint_, color::kTextDim, font_small(),
               DT_LEFT | DT_TOP | DT_WORDBREAK | DT_END_ELLIPSIS);
 
     RECT journal_rect = {};
     GetWindowRect(journal_, &journal_rect);
     MapWindowPoints(nullptr, window_, reinterpret_cast<POINT*>(&journal_rect), 2);
-    RECT journal_caption = {kLeftWidth, journal_rect.top - 22, kLeftWidth + 200,
-                            journal_rect.top - 4};
+    RECT journal_caption = {scale(kLeftWidth), journal_rect.top - scale(22),
+                            scale(kLeftWidth + 200), journal_rect.top - scale(4)};
     draw_text(dc, journal_caption, L"Журнал", color::kTextMuted, font_ui(),
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
@@ -677,9 +768,9 @@ void MainWindow::paint() {
 }
 
 void MainWindow::paint_toolbar(HDC dc, const RECT& client) {
-    RECT bar = {0, 0, client.right, kToolbarHeight};
+    RECT bar = {0, 0, client.right, scale(kToolbarHeight)};
     fill_rect(dc, bar, color::kBar);
-    RECT line = {0, kToolbarHeight - 1, client.right, kToolbarHeight};
+    RECT line = {0, scale(kToolbarHeight) - 1, client.right, scale(kToolbarHeight)};
     fill_rect(dc, line, color::kBorder);
 
     for (size_t i = 0; i < buttons_.size(); ++i) {
@@ -693,23 +784,23 @@ void MainWindow::paint_toolbar(HDC dc, const RECT& client) {
         } else if (tool.enabled && static_cast<int>(i) == hovered_button_) {
             face = color::kButtonHover;
         }
-        if (face != color::kBar) fill_round_rect(dc, tool.rect, 7, face, face);
+        if (face != color::kBar) fill_round_rect(dc, tool.rect, scale(7), face, face);
         draw_text(dc, tool.rect, tool.text, text, font_ui(),
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 }
 
 void MainWindow::paint_status(HDC dc, const RECT& client) {
-    RECT bar = {0, client.bottom - kStatusHeight, client.right, client.bottom};
+    RECT bar = {0, client.bottom - scale(kStatusHeight), client.right, client.bottom};
     fill_rect(dc, bar, color::kBar);
 
     RECT left = bar;
-    left.left += 12;
+    left.left += scale(12);
     draw_text(dc, left, status_text_, color::kTextMuted, font_small(),
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     RECT right = bar;
-    right.right -= 12;
+    right.right -= scale(12);
     draw_text(dc, right, counter_text_, color::kTextMuted, font_small(),
               DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 }
@@ -915,7 +1006,7 @@ void MainWindow::set_task_row_status(int task_id, core::TaskStatus status,
 
 void MainWindow::add_task() {
     TaskDialog dialog(engine_.get(), nullptr, core::settings().get().default_interval);
-    if (!dialog.run(window_, L"Новая задача", 620, 548)) return;
+    if (!dialog.run(window_, L"Новая задача", 620, 574)) return;
 
     core::Task task = core::store().add_task(dialog.result());
     log("Добавлена задача «" + task.name + "»");
@@ -933,7 +1024,7 @@ void MainWindow::edit_task() {
     if (!selected_task(task)) return;
 
     TaskDialog dialog(engine_.get(), &task, task.interval);
-    if (!dialog.run(window_, L"Изменить задачу", 620, 548)) return;
+    if (!dialog.run(window_, L"Изменить задачу", 620, 574)) return;
 
     core::Task updated = dialog.result();
     core::store().update_task(updated);

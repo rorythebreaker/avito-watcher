@@ -3,6 +3,10 @@
 
 IDI_APP_ICON ICON "icon.ico"
 
+// CREATEPROCESS_MANIFEST_RESOURCE_ID: declares DPI awareness and the
+// common controls dependency. The linker is told not to make its own.
+1 RT_MANIFEST "app.manifest"
+
 1 VERSIONINFO
 FILEVERSION     1,0,0,0
 PRODUCTVERSION  1,0,0,0

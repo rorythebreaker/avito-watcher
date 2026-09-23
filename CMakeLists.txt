@@ -83,9 +83,10 @@ target_link_libraries(AvitoWatcher PRIVATE avitowatcher_core ${AVITO_LIBS})
 if(MSVC)
     target_compile_options(avitowatcher_core PRIVATE /W4 /permissive- /utf-8 /EHsc)
     target_compile_options(AvitoWatcher PRIVATE /W4 /permissive- /utf-8 /EHsc)
-    # Ask for the modern common controls so the tray and dialogs look native.
-    target_link_options(AvitoWatcher PRIVATE
-        "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
+    # res/app.manifest is embedded as a resource and carries both the common
+    # controls dependency and the DPI awareness, so the linker must not add a
+    # manifest of its own.
+    target_link_options(AvitoWatcher PRIVATE "/MANIFEST:NO")
 else()
     target_compile_options(avitowatcher_core PRIVATE -Wall -Wextra)
     target_compile_options(AvitoWatcher PRIVATE -Wall -Wextra -municode)

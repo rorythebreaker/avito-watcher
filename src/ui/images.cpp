@@ -22,8 +22,12 @@ std::wstring cache_file_for(const std::string& url) {
 
 }  // namespace
 
-ImageLoader::ImageLoader(HWND window, UINT ready_message)
-    : window_(window), ready_message_(ready_message) {
+ImageLoader::ImageLoader(HWND window, UINT ready_message, int thumb_width,
+                         int thumb_height)
+    : window_(window),
+      ready_message_(ready_message),
+      thumb_width_(thumb_width > 0 ? thumb_width : 128),
+      thumb_height_(thumb_height > 0 ? thumb_height : 96) {
     for (int i = 0; i < 3; ++i) threads_.emplace_back(&ImageLoader::worker, this);
 }
 
@@ -130,8 +134,8 @@ HBITMAP ImageLoader::decode(const std::string& bytes) const {
 
             BITMAPINFO info = {};
             info.bmiHeader.biSize = sizeof(info.bmiHeader);
-            info.bmiHeader.biWidth = kThumbWidth;
-            info.bmiHeader.biHeight = -kThumbHeight;  // top-down
+            info.bmiHeader.biWidth = thumb_width_;
+            info.bmiHeader.biHeight = -thumb_height_;  // top-down
             info.bmiHeader.biPlanes = 1;
             info.bmiHeader.biBitCount = 32;
             info.bmiHeader.biCompression = BI_RGB;
@@ -147,13 +151,13 @@ HBITMAP ImageLoader::decode(const std::string& bytes) const {
                     graphics.Clear(Gdiplus::Color(255, 42, 47, 54));
 
                     // Cover the whole thumbnail, cropping the overflow evenly.
-                    double scale = std::max(
-                        static_cast<double>(kThumbWidth) / source.GetWidth(),
-                        static_cast<double>(kThumbHeight) / source.GetHeight());
-                    int width = static_cast<int>(source.GetWidth() * scale + 0.5);
-                    int height = static_cast<int>(source.GetHeight() * scale + 0.5);
-                    int x = (kThumbWidth - width) / 2;
-                    int y = (kThumbHeight - height) / 2;
+                    double factor = std::max(
+                        static_cast<double>(thumb_width_) / source.GetWidth(),
+                        static_cast<double>(thumb_height_) / source.GetHeight());
+                    int width = static_cast<int>(source.GetWidth() * factor + 0.5);
+                    int height = static_cast<int>(source.GetHeight() * factor + 0.5);
+                    int x = (thumb_width_ - width) / 2;
+                    int y = (thumb_height_ - height) / 2;
                     graphics.DrawImage(&source, x, y, width, height);
                 }
                 SelectObject(memory, old);
