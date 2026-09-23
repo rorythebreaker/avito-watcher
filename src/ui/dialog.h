@@ -9,7 +9,6 @@
 #include <windows.h>
 
 #include <map>
-#include <map>
 #include <string>
 #include <vector>
 
@@ -78,6 +77,10 @@ private:
     bool accepted_ = false;
     bool finished_ = false;
     std::vector<HWND> hints_;
+    // Text fields carry no border of their own, so the dialog draws one
+    // around each of them; the sunken 3D edge Windows offers looks wrong
+    // on a dark background.
+    std::vector<HWND> fields_;
     std::vector<HWND> errors_;
     std::vector<HWND> primary_buttons_;
     // BS_OWNERDRAW lives in the same bits as BS_AUTOCHECKBOX, so a button

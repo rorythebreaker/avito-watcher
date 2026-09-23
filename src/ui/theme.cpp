@@ -1,7 +1,12 @@
 #include "ui/theme.h"
 
+#include <commctrl.h>
+#include <dwmapi.h>
+#include <uxtheme.h>
+
 #include <map>
 #include <mutex>
+#include <string>
 
 namespace ui {
 namespace {
@@ -137,6 +142,120 @@ int dpi_scale(HWND window, int value) {
         ReleaseDC(nullptr, screen);
     }
     return MulDiv(value, static_cast<int>(dpi), 96);
+}
+
+
+void enable_dark_titlebar(HWND window) {
+    if (!window) return;
+    // DWMWA_USE_IMMERSIVE_DARK_MODE. Attribute 20 since Windows 10 2004; the
+    // earlier builds that shipped it used 19, so try both and ignore failures.
+    const BOOL dark = TRUE;
+    DwmSetWindowAttribute(window, 20, &dark, sizeof(dark));
+    DwmSetWindowAttribute(window, 19, &dark, sizeof(dark));
+}
+
+void enable_dark_control(HWND control, const wchar_t* theme) {
+    if (!control) return;
+    // The dark variants of the common control themes give us dark scrollbars
+    // and borders. Unknown theme names are ignored, so this is safe everywhere.
+    SetWindowTheme(control, theme, nullptr);
+}
+
+void draw_field_frame(HDC dc, const RECT& field, bool focused) {
+    RECT frame = field;
+    InflateRect(&frame, 1, 1);
+    HPEN pen = CreatePen(PS_SOLID, 1, focused ? color::kAccent : RGB(0x33, 0x3c, 0x48));
+    HGDIOBJ old_pen = SelectObject(dc, pen);
+    HGDIOBJ old_brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+    RoundRect(dc, frame.left, frame.top, frame.right, frame.bottom, 8, 8);
+    SelectObject(dc, old_brush);
+    SelectObject(dc, old_pen);
+    DeleteObject(pen);
+}
+
+namespace {
+
+// A drop-down list draws its own frame and arrow in the system colours, which
+// no amount of owner drawing of the items can change. Painting the closed state
+// ourselves is the only way to keep it dark.
+LRESULT CALLBACK combo_subclass(HWND window, UINT message, WPARAM wparam, LPARAM lparam,
+                                UINT_PTR id, DWORD_PTR data) {
+    (void)id;
+    (void)data;
+
+    switch (message) {
+        case WM_ERASEBKGND:
+            return 1;
+
+        case WM_PAINT: {
+            PAINTSTRUCT ps = {};
+            HDC dc = BeginPaint(window, &ps);
+
+            RECT client = {};
+            GetClientRect(window, &client);
+
+            const bool focused = GetFocus() == window;
+            const bool disabled = !IsWindowEnabled(window);
+
+            fill_round_rect(dc, client, 7, color::kInput,
+                            focused ? color::kAccent : RGB(0x33, 0x3c, 0x48));
+
+            // Current selection.
+            std::wstring text;
+            int selected = static_cast<int>(SendMessageW(window, CB_GETCURSEL, 0, 0));
+            if (selected >= 0) {
+                int length = static_cast<int>(SendMessageW(window, CB_GETLBTEXTLEN, selected, 0));
+                if (length > 0) {
+                    text.resize(static_cast<size_t>(length) + 1);
+                    SendMessageW(window, CB_GETLBTEXT, selected,
+                                 reinterpret_cast<LPARAM>(text.data()));
+                    text.resize(static_cast<size_t>(length));
+                }
+            }
+
+            RECT text_area = client;
+            text_area.left += 10;
+            text_area.right -= 26;
+            draw_text(dc, text_area, elide(dc, text, text_area.right - text_area.left, font_ui()),
+                      disabled ? color::kTextDim : color::kText, font_ui(),
+                      DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+            // Chevron.
+            const int cx = client.right - 15;
+            const int cy = (client.top + client.bottom) / 2 - 1;
+            HPEN pen = CreatePen(PS_SOLID, 2, disabled ? color::kTextDim : color::kTextMuted);
+            HGDIOBJ old_pen = SelectObject(dc, pen);
+            MoveToEx(dc, cx - 4, cy - 2, nullptr);
+            LineTo(dc, cx, cy + 2);
+            LineTo(dc, cx + 5, cy - 3);
+            SelectObject(dc, old_pen);
+            DeleteObject(pen);
+
+            EndPaint(window, &ps);
+            return 0;
+        }
+
+        case WM_SETFOCUS:
+        case WM_KILLFOCUS:
+            InvalidateRect(window, nullptr, TRUE);
+            break;
+
+        case WM_NCDESTROY:
+            RemoveWindowSubclass(window, combo_subclass, 1);
+            break;
+
+        default:
+            break;
+    }
+    return DefSubclassProc(window, message, wparam, lparam);
+}
+
+}  // namespace
+
+void make_dark_combo(HWND combo) {
+    if (!combo) return;
+    enable_dark_control(combo);
+    SetWindowSubclass(combo, combo_subclass, 1, 0);
 }
 
 }  // namespace ui

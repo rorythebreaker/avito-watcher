@@ -75,7 +75,8 @@ target_compile_definitions(AvitoWatcher PRIVATE
 )
 
 set(AVITO_LIBS winhttp ws2_32 crypt32 secur32 shlwapi comctl32
-               gdiplus shell32 user32 gdi32 ole32 uuid advapi32 msimg32)
+               gdiplus shell32 user32 gdi32 ole32 uuid advapi32 msimg32
+               dwmapi uxtheme)
 target_link_libraries(avitowatcher_core PUBLIC ${AVITO_LIBS})
 target_link_libraries(AvitoWatcher PRIVATE avitowatcher_core ${AVITO_LIBS})
 

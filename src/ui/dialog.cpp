@@ -51,6 +51,7 @@ bool ModalDialog::run(HWND parent, const std::wstring& title, int width, int hei
                               parent, nullptr, instance, this);
     if (!window_) return false;
 
+    enable_dark_titlebar(window_);
     SendMessageW(window_, WM_SETICON, ICON_SMALL,
                  reinterpret_cast<LPARAM>(app_icon_small()));
     build();
@@ -134,6 +135,9 @@ LRESULT ModalDialog::handle(UINT message, WPARAM wparam, LPARAM lparam) {
                 finished_ = true;
                 return 0;
             }
+            if (notification == EN_SETFOCUS || notification == EN_KILLFOCUS) {
+                InvalidateRect(window_, nullptr, FALSE);
+            }
             HWND clicked = reinterpret_cast<HWND>(lparam);
             if (notification == BN_CLICKED && toggles_.count(clicked)) toggle_clicked(clicked);
             on_command(id, notification);
@@ -148,6 +152,20 @@ LRESULT ModalDialog::handle(UINT message, WPARAM wparam, LPARAM lparam) {
         case WM_DRAWITEM:
             draw_item(reinterpret_cast<DRAWITEMSTRUCT*>(lparam));
             return TRUE;
+
+        case WM_PAINT: {
+            PAINTSTRUCT ps = {};
+            HDC dc = BeginPaint(window_, &ps);
+            for (HWND field : fields_) {
+                if (!IsWindowVisible(field)) continue;
+                RECT bounds = {};
+                GetWindowRect(field, &bounds);
+                MapWindowPoints(nullptr, window_, reinterpret_cast<POINT*>(&bounds), 2);
+                draw_field_frame(dc, bounds, GetFocus() == field);
+            }
+            EndPaint(window_, &ps);
+            return 0;
+        }
 
         case WM_CTLCOLORSTATIC: {
             HDC dc = reinterpret_cast<HDC>(wparam);
@@ -260,7 +278,21 @@ void ModalDialog::draw_item(DRAWITEMSTRUCT* item) {
         draw_text(item->hDC, text_area, text, disabled ? color::kTextDim : color::kText,
                   font_ui(), DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_WORDBREAK);
 
-        if (item->itemState & ODS_FOCUS) DrawFocusRect(item->hDC, &item->rcItem);
+        // A dotted focus rectangle around the whole control reads as a stray
+        // border here; outlining the mark alone is enough of a cue.
+        if (item->itemState & ODS_FOCUS) {
+            RECT ring = mark;
+            InflateRect(&ring, 3, 3);
+            HPEN pen = CreatePen(PS_SOLID, 1, color::kAccent);
+            HGDIOBJ old_pen = SelectObject(item->hDC, pen);
+            HGDIOBJ old_brush = SelectObject(item->hDC, GetStockObject(NULL_BRUSH));
+            RoundRect(item->hDC, ring.left, ring.top, ring.right, ring.bottom,
+                      is_radio ? ring.right - ring.left : 8,
+                      is_radio ? ring.bottom - ring.top : 8);
+            SelectObject(item->hDC, old_brush);
+            SelectObject(item->hDC, old_pen);
+            DeleteObject(pen);
+        }
         return;
     }
 
@@ -276,6 +308,10 @@ void ModalDialog::draw_item(DRAWITEMSTRUCT* item) {
         face = primary ? color::kAccentDark : color::kAccent;
         fore = RGB(0x08, 0x12, 0x1c);
     }
+    // Fill first: RoundRect leaves the corners outside the rounded shape
+    // untouched, and whatever the button had underneath shows through as a
+    // white notch.
+    fill_rect(item->hDC, item->rcItem, color::kWindow);
     fill_round_rect(item->hDC, item->rcItem, 7, face,
                     primary ? face : RGB(0x33, 0x3c, 0x48));
     draw_text(item->hDC, item->rcItem, text, fore, font_ui(),
@@ -302,14 +338,25 @@ HWND ModalDialog::edit(const std::wstring& text, int x, int y, int w, int h, int
     DWORD style = WS_TABSTOP | ES_AUTOHSCROLL;
     if (password) style |= ES_PASSWORD;
     if (multiline) style |= ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL;
-    return add(L"Edit", text, style, WS_EX_CLIENTEDGE, x, y, w, h, id);
+    HWND control = add(L"Edit", text, style, 0, x, y, w, h, id);
+    if (control) {
+        SendMessageW(control, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(7, 7));
+        enable_dark_control(control);
+        fields_.push_back(control);
+    }
+    return control;
 }
 
 HWND ModalDialog::number(int value, int x, int y, int w, int h, int id) {
     // Zero stands for "no limit", and an empty field says that better than "0".
     std::wstring text = value != 0 ? std::to_wstring(value) : std::wstring();
-    return add(L"Edit", text, WS_TABSTOP | ES_NUMBER | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, x, y,
-               w, h, id);
+    HWND control = add(L"Edit", text, WS_TABSTOP | ES_NUMBER | ES_AUTOHSCROLL, 0, x, y, w, h, id);
+    if (control) {
+        SendMessageW(control, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(7, 7));
+        enable_dark_control(control);
+        fields_.push_back(control);
+    }
+    return control;
 }
 
 HWND ModalDialog::button(const std::wstring& text, int x, int y, int w, int h, int id,
@@ -353,6 +400,7 @@ HWND ModalDialog::combo(int x, int y, int w, int h, int id,
         SendMessageW(control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(item.c_str()));
     }
     SendMessageW(control, CB_SETCURSEL, static_cast<WPARAM>(selected), 0);
+    make_dark_combo(control);
     return control;
 }
 

@@ -58,4 +58,21 @@ int text_width(HDC dc, const std::wstring& text, HFONT text_font);
 // Scales a value from 96 DPI to the DPI of the given window.
 int dpi_scale(HWND window, int value);
 
+// Paints the window's title bar dark. Supported from Windows 10 2004; on older
+// builds the call is simply ignored.
+void enable_dark_titlebar(HWND window);
+
+// Asks the common controls to use their dark scrollbars and borders.
+// `theme` picks the variant: the default suits edits and scrolling panes,
+// while list and tree views want DarkMode_ItemsView, whose explorer
+// counterpart would draw column separators across the empty area.
+void enable_dark_control(HWND control, const wchar_t* theme = L"DarkMode_Explorer");
+
+// Replaces a combo box's system-drawn frame and arrow with our own, so the
+// control stops showing a light border on the dark background.
+void make_dark_combo(HWND combo);
+
+// Draws the frame we put around text fields, which have no border of their own.
+void draw_field_frame(HDC dc, const RECT& field, bool focused);
+
 }  // namespace ui

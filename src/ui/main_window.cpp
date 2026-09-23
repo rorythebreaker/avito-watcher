@@ -177,6 +177,7 @@ bool MainWindow::create(HINSTANCE instance, bool start_hidden) {
         }
     }
 
+    enable_dark_titlebar(window_);
     build_children(instance);
     layout();
 
@@ -219,6 +220,10 @@ void MainWindow::build_children(HINSTANCE instance) {
     ListView_SetTextColor(task_list_, color::kText);
     SendMessageW(task_list_, WM_SETFONT, reinterpret_cast<WPARAM>(font_ui()), TRUE);
     SetWindowSubclass(task_list_, task_list_subclass, 1, 0);
+    // The dark list themes draw column separators down the whole empty
+    // area, which looks like a broken table when there are few tasks, so
+    // the list keeps the plain theme and gets its colours from the
+    // ListView_Set*Color calls above and the custom-drawn header.
 
     // Widths add up to the list's inner width so no horizontal scrollbar
     // appears: kLeftWidth minus margins minus the vertical scrollbar.
@@ -242,6 +247,7 @@ void MainWindow::build_children(HINSTANCE instance) {
                                     reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdFilter)),
                                     instance, nullptr);
     SendMessageW(filter_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font_ui()), TRUE);
+    make_dark_combo(filter_combo_);
 
     clear_button_ = CreateWindowExW(0, L"Button", L"Очистить ленту",
                                     WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP,
@@ -250,13 +256,15 @@ void MainWindow::build_children(HINSTANCE instance) {
                                     instance, nullptr);
     SendMessageW(clear_button_, WM_SETFONT, reinterpret_cast<WPARAM>(font_ui()), TRUE);
 
-    journal_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"Edit", L"",
+    journal_ = CreateWindowExW(0, L"Edit", L"",
                                WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE |
                                    ES_READONLY | ES_AUTOVSCROLL,
                                0, 0, 100, 100, window_,
                                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdJournal)),
                                instance, nullptr);
     SendMessageW(journal_, WM_SETFONT, reinterpret_cast<WPARAM>(font(8)), TRUE);
+    SendMessageW(journal_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(7, 7));
+    enable_dark_control(journal_);
 
     images_ = std::make_unique<ImageLoader>(window_, WM_IMAGE_READY);
     feed_ = std::make_unique<FeedView>();
@@ -404,6 +412,7 @@ LRESULT MainWindow::handle(UINT message, WPARAM wparam, LPARAM lparam) {
             auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lparam);
             if (item && item->hwndItem == clear_button_) {
                 bool down = (item->itemState & ODS_SELECTED) != 0;
+                fill_rect(item->hDC, item->rcItem, color::kWindow);
                 fill_round_rect(item->hDC, item->rcItem, 7,
                                 down ? color::kAccent : color::kButton,
                                 RGB(0x33, 0x3c, 0x48));
@@ -648,6 +657,15 @@ void MainWindow::paint() {
                             journal_rect.top - 4};
     draw_text(dc, journal_caption, L"Журнал", color::kTextMuted, font_ui(),
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    // Frames around the borderless children.
+    for (HWND framed : {journal_, feed_->handle(), task_list_}) {
+        if (!framed) continue;
+        RECT bounds = {};
+        GetWindowRect(framed, &bounds);
+        MapWindowPoints(nullptr, window_, reinterpret_cast<POINT*>(&bounds), 2);
+        draw_field_frame(dc, bounds, false);
+    }
 
     paint_status(dc, client);
 
@@ -897,7 +915,7 @@ void MainWindow::set_task_row_status(int task_id, core::TaskStatus status,
 
 void MainWindow::add_task() {
     TaskDialog dialog(engine_.get(), nullptr, core::settings().get().default_interval);
-    if (!dialog.run(window_, L"Новая задача", 620, 570)) return;
+    if (!dialog.run(window_, L"Новая задача", 620, 548)) return;
 
     core::Task task = core::store().add_task(dialog.result());
     log("Добавлена задача «" + task.name + "»");
@@ -915,7 +933,7 @@ void MainWindow::edit_task() {
     if (!selected_task(task)) return;
 
     TaskDialog dialog(engine_.get(), &task, task.interval);
-    if (!dialog.run(window_, L"Изменить задачу", 620, 570)) return;
+    if (!dialog.run(window_, L"Изменить задачу", 620, 548)) return;
 
     core::Task updated = dialog.result();
     core::store().update_task(updated);
